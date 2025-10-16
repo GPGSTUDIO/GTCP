@@ -1,9 +1,10 @@
 <link rel="icon" href="http://localhost:8000/favicon.ico" type="image/x-icon">
-<h1 id=has>This is index page</h1>
+<h1>This is index page</h1>
+<h1 id=has>Your browser is not supported javascript!</h1>
 <script>
 if ("{%test%}"=="{%"+"test"+"%}") {
-
+document.getElementById("has").innerHTML = "Dont has tag test";
 } else {
-document.getElementById("has").innerHTML = "Так быстро слушай меня сюда я тебя выебу и всё...";
+document.getElementById("has").innerHTML = "Has tag test and value: {%test%}";
 };
 </script>

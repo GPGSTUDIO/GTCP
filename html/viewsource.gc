@@ -1,3 +1,10 @@
-if <VAR>filename /= <VAR>__nothing__ open <VAR>filename read output
-if <VAR>filename /= <VAR>__nothing__ print <VAR>output
-if <VAR>filename == <VAR>__nothing__ print Doesnt have args! add argument with name "filename" and try again.
+print <style>body {background: black;color: #5f5}</style><body>
+set insidetext Inside file: 
+if <VAR>filename /= <VAR>nothing start echo Current path: %cd%^<br^>
+if <VAR>filename /= <VAR>nothing setadd megafilename <VAR>insidetext <VAR>filename
+if <VAR>filename /= <VAR>nothing print <VAR>megafilename
+if <VAR>filename /= <VAR>nothing print <br>
+if <VAR>filename /= <VAR>nothing open <VAR>filename read output
+if <VAR>filename /= <VAR>nothing print <VAR>output
+if <VAR>filename == <VAR>nothing print You need to add args: (filename)
+print </body>

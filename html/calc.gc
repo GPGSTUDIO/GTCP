@@ -1,0 +1,5 @@
+print This is example .gc script
+print This is math your text in variable math
+if <VAR>math /= <VAR>nothing setmath math <VAR>math
+if <VAR>math /= <VAR>nothing print <VAR>math
+if <VAR>math == <VAR>nothing print Please use variable!
