@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>GTCP Браузер</title>
+    <meta name="viewport" content="width=75%, initial-scale=0, maximum-scale=0, user-scalable=0"/>
+    <hta:application 
+        id="gtcpBrowser"
+        applicationname="GTCP Browser"
+        border="thin"
+        borderstyle="raised"
+        caption="yes"
+        maximizebutton="yes"
+        minimizebutton="yes"
+        showintaskbar="yes"
+        singleinstance="yes"
+        sysmenu="yes"
+        windowstate="normal"
+        innerborder="no"
+        scroll="auto"
+        scrollflat="yes"
+        contextmenu="no"
+        selection="yes"
+    >
+    <style type="text/css">
+        body {
+            background: #000000;
+            color: darkcyan;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        logo {
+            color: cyan;
+            text-shadow:
+                0 0 7px #0ff,
+                0 0 10px #0ff,
+                0 0 21px #0ff,
+                0 0 42px #0fa,
+                0 0 82px #0fa,
+                0 0 92px #0fa,
+                0 0 102px #0fa,
+                0 0 151px #0fa;
+            font-size: 40px;
+            font-weight: bold;
+        }
+        
+        input {
+            background: #033;
+            color: darkcyan;
+            border: 1px solid #0ff;
+            font-size: 29px;
+            margin: 5px;
+            padding: 8px;
+        }
+        
+        #url-input {
+            width: 70%;
+        }
+        
+        #go-button {
+            background: #033;
+            color: darkcyan;
+            border: 1px solid #0ff;
+            cursor: pointer;
+            font-size: 29px;
+            padding: 8px 20px;
+        }
+        
+        #go-button:hover {
+            background: #044;
+        }
+        
+        line {
+            background: #0ff;
+            position: absolute;
+            top: 15%;
+            left: 0%;
+            width: 100%;
+            height: 2px;
+        }
+        
+        embed, iframe {
+            position: absolute;
+            left: 3%;
+            top: 18%;
+            width: 94%;
+            height: 78%;
+            border: 1px solid #0ff;
+            background: white;
+        }
+        
+        * {
+            font-size: 29px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 20px;
+            color: #0aa;
+        }
+        
+        .protocol-info {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            font-size: 20px;
+            color: #0aa;
+        }
+        
+        .error {
+            color: #f55;
+        }
+        
+        .success {
+            color: #5f5;
+        }
+        
+        .warning {
+            color: #ff5;
+        }
+        
+        .file-info {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 51, 51, 0.9);
+            border: 1px solid #0ff;
+            padding: 20px;
+            z-index: 1000;
+        }
+        
+        textarea {
+            width: 90%;
+            height: 300px;
+            background: #033;
+            color: darkcyan;
+            border: 1px solid #0ff;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <center>
+        <logo>GTCP Браузер</logo>
+        <input id="url-input" value="gtcp://localhost:8000/index.html"></input>
+        <input id="go-button" type="submit" value="Перейти">
+    </center>
+    <line></line>
+    
+    <embed id="web-frame" src="" class="hidden"/>
+    <iframe id="html-content" sandbox="allow-scripts allow-same-origin allow-forms" class="hidden"></iframe>
+    <div id="content">
+        <center style="margin-top: 50px;">
+            <h2>Добро пожаловать в GTCP Браузер!</h2>
+            <p>Поддерживаемые протоколы:</p>
+            <p>• GTCP - gtcp://server:port/path</p>
+            <p>• HTTP/HTTPS - веб-страницы</p>
+            <p>• FILE - локальные файлы</p>
+            <p>• Поиск Google - текстовые запросы</p>
+            <br>
+            <p>Примеры:</p>
+            <p>gtcp://localhost:8000/index.html</p>
+            <p>https://example.com</p>
+            <p>file://C:/test.txt</p>
+            <p>новости технологий</p>
+        </center>
+    </div>
+    
+    <div class="status" id="status">Готов к работе</div>
+    <div class="protocol-info" id="protocol-info"></div>
+
+    <script type="text/javascript">
+        // Объявление глобальных переменных
+        var urlInput, goButton, content, webFrame, htmlContent, status, protocolInfo;
+        var shell, fso;
+        var isNavigating = false;
+        var currentRequest = null;
+        
+        // Конфигурация лимитов
+        var MAX_FILE_SIZE = 500000; // 500KB - безопасный лимит для HTA
+        var MAX_PREVIEW_SIZE = 10000; // 10KB для предпросмотра
+        
+        // Отключение ошибок сценария
+        window.onerror = function() {
+            return true; // Подавляем все ошибки сценария
+        };
+        
+        // Инициализация при загрузке
+        window.onload = function() {
+            // Проверка поддержки ActiveX (для HTA)
+            try {
+                shell = new ActiveXObject("WScript.Shell");
+                fso = new ActiveXObject("Scripting.FileSystemObject");
+            } catch (e) {
+                document.getElementById('content').innerHTML = 
+                    '<center style="color:red; margin-top: 50px;">' +
+                    '<h2>Ошибка: Это приложение должно запускаться как HTA</h2>' +
+                    '<p>Сохраните файл с расширением .hta и запустите его</p>' +
+                    '</center>';
+                return;
+            }
+            
+            // Инициализация элементов DOM
+            urlInput = document.getElementById('url-input');
+            goButton = document.getElementById('go-button');
+            content = document.getElementById('content');
+            webFrame = document.getElementById('web-frame');
+            htmlContent = document.getElementById('html-content');
+            status = document.getElementById('status');
+            protocolInfo = document.getElementById('protocol-info');
+            
+            // Назначение обработчиков событий
+            goButton.onclick = navigate;
+            urlInput.onkeydown = handleKeyPress;
+            
+            urlInput.focus();
+        };
+        
+        // Обработчик нажатия кнопки
+        function navigate() {
+            if (isNavigating) {
+                setStatus('warning', 'Подождите, выполняется предыдущий запрос...');
+                return;
+            }
+            
+            var url = urlInput.value;
+            if (url) {
+                url = url.replace(/^\s+|\s+$/g, '');
+            }
+            if (url) {
+                navigateTo(url);
+            }
+        }
+        
+        // Обработчик клавиш
+        function handleKeyPress(e) {
+            e = e || window.event;
+            if (e.keyCode === 13) {
+                navigate();
+                if (e.preventDefault) e.preventDefault();
+                return false;
+            }
+            return true;
+        }
+        
+        // Основная функция навигации
+        function navigateTo(url) {
+            if (isNavigating) {
+                setStatus('warning', 'Подождите, выполняется предыдущий запрос...');
+                return;
+            }
+            
+            isNavigating = true;
+            currentRequest = url;
+            
+            clearContent();
+            setStatus('info', 'Обработка запроса...');
+            
+            try {
+                if (url.indexOf('gtcp://') === 0) {
+                    loadGTCP(url);
+                } else if (url.indexOf('http://') === 0 || url.indexOf('https://') === 0) {
+                    loadWeb(url);
+                } else if (url.indexOf('file://') === 0) {
+                    loadFile(url);
+                } else {
+                    searchGoogle(url);
+                }
+            } catch (error) {
+                setStatus('error', 'Ошибка навигации: ' + error.message);
+                isNavigating = false;
+            }
+        }
+        
+        // GTCP клиент через tcp_cl.py
+        function loadGTCP(url) {
+            setProtocolInfo('Протокол: GTCP');
+            
+            try {
+                // Парсинг GTCP URL
+                var urlWithoutProtocol = url.substring(7);
+                var firstSlash = urlWithoutProtocol.indexOf('/');
+                var hostPortPart, pathPart;
+                
+                if (firstSlash === -1) {
+                    hostPortPart = urlWithoutProtocol;
+                    pathPart = '/';
+                } else {
+                    hostPortPart = urlWithoutProtocol.substring(0, firstSlash);
+                    pathPart = urlWithoutProtocol.substring(firstSlash);
+                }
+                
+                var colonPos = hostPortPart.indexOf(':');
+                var host, port;
+                
+                if (colonPos === -1) {
+                    host = hostPortPart;
+                    port = '8000';
+                } else {
+                    host = hostPortPart.substring(0, colonPos);
+                    port = hostPortPart.substring(colonPos + 1);
+                }
+                
+                // Временный файл для результата
+                var tempDir = fso.GetSpecialFolder(2);
+                var tempFile = tempDir + "\\gtcp_temp_" + (new Date().getTime()) + ".html";
+                
+                setStatus('info', 'Подключение к GTCP серверу ' + host + ':' + port + '...');
+                
+                // Вызов tcp_cl.py с таймаутом
+                var command = 'tcp_cl.py ' + host + ':' + port + ' "' + pathPart + '" "' + tempFile + '"';
+                
+                // Запускаем в отдельном процессе
+                setTimeout(function() {
+                    try {
+                        var returnCode = shell.Run(command, 0, true);
+                        
+                        // Проверяем, не был ли запрос отменен
+                        if (currentRequest !== url) {
+                            isNavigating = false;
+                            try { fso.DeleteFile(tempFile); } catch(e) {}
+                            return;
+                        }
+                        
+                        // Проверка существования файла
+                        if (fso.FileExists(tempFile)) {
+                            var file = fso.OpenTextFile(tempFile, 1);
+                            var fileContent = file.ReadAll();
+                            file.Close();
+                            
+                            // Получаем размер файла
+                            var fileSize = fileContent.length;
+                            
+                            // Удаление временного файла
+                            try {
+                                fso.DeleteFile(tempFile);
+                            } catch (e) {
+                                // Игнорируем ошибки удаления временного файла
+                            }
+                            
+                            // Обработка ответа GTCP с учетом размера
+                            processGTCPResponse(fileContent, fileSize, url);
+                            
+                        } else {
+                            setStatus('error', 'Ошибка: Файл результата не создан. Код возврата: ' + returnCode);
+                            isNavigating = false;
+                        }
+                    } catch (error) {
+                        if (currentRequest === url) {
+                            setStatus('error', 'Ошибка GTCP: ' + error.message);
+                            isNavigating = false;
+                        }
+                    }
+                }, 100);
+                
+            } catch (error) {
+                setStatus('error', 'Ошибка GTCP: ' + error.message);
+                isNavigating = false;
+            }
+        }
+        
+        // Обработка ответа GTCP с учетом размера
+        function processGTCPResponse(data, fileSize, originalUrl) {
+            // Проверяем, не устарел ли запрос
+            if (currentRequest !== originalUrl) {
+                isNavigating = false;
+                return;
+            }
+            
+            // Очищаем все контейнеры
+            clearAllContainers();
+            
+            // Проверяем размер файла
+            if (fileSize > MAX_FILE_SIZE) {
+                setStatus('warning', 'Файл слишком большой для отображения (' + formatFileSize(fileSize) + ')');
+                showFileInfo('Большой файл', 
+                    'Размер файла: ' + formatFileSize(fileSize) + '<br>' +
+                    'Максимальный размер: ' + formatFileSize(MAX_FILE_SIZE) + '<br><br>' +
+                    '<button onclick="showFilePreview(\'' + escapeHtml(data.substring(0, MAX_PREVIEW_SIZE)) + '\')">Показать начало файла</button>' +
+                    '<button onclick="saveToFile(\'' + escapeHtml(data) + '\')">Сохранить в файл</button>');
+                isNavigating = false;
+                return;
+            }
+            
+            try {
+                if (data.indexOf('<OKAY>') === 0) {
+                    var contentData = data.substring('<OKAY> No problem: '.length);
+                    safeDisplayHTML(contentData, fileSize, originalUrl);
+                    setStatus('success', 'Успешно загружено с GTCP сервера (' + formatFileSize(fileSize) + ')');
+                } 
+                else if (data.indexOf('<404>') === 0) {
+                    setStatus('error', 'GTCP Ошибка 404 - Страница не найдена');
+                    showSafeContent('Ошибка 404 - Страница не найдена', 
+                        'Сервер вернул ошибку 404 для запроса');
+                }
+                else if (data.indexOf('<404W>') === 0) {
+                    var contentData = data.substring('<404W> This is webpage: '.length);
+                    safeDisplayHTML(contentData, fileSize, originalUrl);
+                    setStatus('info', 'GTCP Веб-страница с ошибкой 404');
+                }
+                else {
+                    // Если ответ не в стандартном формате, пробуем отобразить как HTML
+                    safeDisplayHTML(data, fileSize, originalUrl);
+                    setStatus('success', 'Получены данные с GTCP сервера (' + formatFileSize(fileSize) + ')');
+                }
+            } catch (error) {
+                setStatus('error', 'Ошибка обработки GTCP ответа: ' + error.message);
+                showSafeContent('Ошибка обработки данных', error.message);
+            }
+            
+            isNavigating = false;
+        }
+        
+        // Безопасное отображение HTML с проверкой размера
+        function safeDisplayHTML(html, fileSize, originalUrl) {
+            // Проверяем, не устарел ли запрос
+            if (currentRequest !== originalUrl) {
+                isNavigating = false;
+                return;
+            }
+            
+            // Для файлов больше 100KB используем текстовое отображение
+            if (fileSize > 100000) {
+                setStatus('warning', 'Большой HTML файл (' + formatFileSize(fileSize) + '). Отображаем как текст.');
+                showFileInfo('Большой HTML файл',
+                    'Размер: ' + formatFileSize(fileSize) + '<br>' +
+                    'Файл отображается как текст для предотвращения ошибок.<br><br>' +
+                    '<textarea readonly>' + escapeHtml(html.substring(0, MAX_PREVIEW_SIZE)) + 
+                    (html.length > MAX_PREVIEW_SIZE ? '\n\n... [файл обрезан, показаны первые ' + MAX_PREVIEW_SIZE + ' символов] ...' : '') + 
+                    '</textarea><br><br>' +
+                    '<button onclick="showFullContent(\'' + escapeHtml(html) + '\')">Показать полное содержимое</button>' +
+                    '<button onclick="saveToFile(\'' + escapeHtml(html) + '\')">Сохранить в файл</button>');
+                return;
+            }
+            
+            try {
+                // Скрываем основной контент, показываем iframe
+                content.style.display = 'none';
+                htmlContent.className = '';
+                webFrame.className = 'hidden';
+                
+                // Безопасная запись в iframe
+                var iframeDoc = htmlContent.contentDocument || htmlContent.contentWindow.document;
+                iframeDoc.open();
+                iframeDoc.write(html);
+                iframeDoc.close();
+                
+            } catch (error) {
+                setStatus('error', 'Ошибка отображения HTML: ' + error.message);
+                showSafeContent('Ошибка отображения контента', 
+                    'Размер файла: ' + formatFileSize(fileSize) + '<br>' + error.message);
+            }
+        }
+        
+        // Показать информацию о файле
+        function showFileInfo(title, contentHtml) {
+            content.innerHTML = '<div class="file-info">' +
+                '<h2>' + title + '</h2>' +
+                '<div>' + contentHtml + '</div>' +
+                '</div>';
+            content.style.display = 'block';
+        }
+        
+        // Показать предпросмотр файла
+        function showFilePreview(content) {
+            content.innerHTML = '<div class="file-info" style="width: 80%; height: 70%; overflow: auto;">' +
+                '<h2>Начало файла</h2>' +
+                '<textarea readonly style="width: 95%; height: 80%;">' + content + '</textarea>' +
+                '<br><br><button onclick="clearAllContainers(); content.style.display=\'block\';">Закрыть</button>' +
+                '</div>';
+            content.style.display = 'block';
+        }
+        
+        // Показать полное содержимое
+        function showFullContent(fullContent) {
+            var tempDir = fso.GetSpecialFolder(2);
+            var tempFile = tempDir + "\\gtcp_full_content_" + (new Date().getTime()) + ".html";
+            
+            try {
+                var file = fso.CreateTextFile(tempFile, true);
+                file.Write(fullContent);
+                file.Close();
+                
+                shell.Run('notepad.exe "' + tempFile + '"', 1, false);
+                setStatus('info', 'Содержимое открыто в блокноте: ' + tempFile);
+            } catch (error) {
+                setStatus('error', 'Ошибка сохранения файла: ' + error.message);
+            }
+        }
+        
+        // Сохранить в файл
+        function saveToFile(content) {
+            var tempDir = fso.GetSpecialFolder(2);
+            var tempFile = tempDir + "\\gtcp_saved_" + (new Date().getTime()) + ".html";
+            
+            try {
+                var file = fso.CreateTextFile(tempFile, true);
+                file.Write(content);
+                file.Close();
+                
+                setStatus('success', 'Файл сохранен: ' + tempFile);
+                setTimeout(function() {
+                    if (confirm('Файл сохранен: ' + tempFile + '\n\nОткрыть в блокноте?')) {
+                        shell.Run('notepad.exe "' + tempFile + '"', 1, false);
+                    }
+                }, 100);
+            } catch (error) {
+                setStatus('error', 'Ошибка сохранения файла: ' + error.message);
+            }
+        }
+        
+        // Форматирование размера файла
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' байт';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(1) + ' MB';
+        }
+        
+        // HTTP/HTTPS загрузка
+        function loadWeb(url) {
+            setProtocolInfo('Протокол: ' + (url.indexOf('https://') === 0 ? 'HTTPS' : 'HTTP'));
+            setStatus('info', 'Загрузка: ' + url);
+            
+            clearAllContainers();
+            webFrame.src = url;
+            webFrame.className = '';
+            
+            setTimeout(function() {
+                if (currentRequest === url) {
+                    setStatus('success', 'Загружено: ' + url);
+                    isNavigating = false;
+                }
+            }, 3000);
+        }
+        
+        // Локальные файлы
+        function loadFile(url) {
+            setProtocolInfo('Протокол: FILE');
+            
+            try {
+                if (url.indexOf('file:///') === 0) {
+                    var filePath = url.substring(8).replace(/\//g, '\\');
+                    
+                    if (fso.FileExists(filePath)) {
+                        var file = fso.GetFile(filePath);
+                        var fileSize = file.Size;
+                        
+                        if (fileSize > MAX_FILE_SIZE) {
+                            setStatus('warning', 'Файл слишком большой (' + formatFileSize(fileSize) + ')');
+                            showFileInfo('Большой файл',
+                                'Размер: ' + formatFileSize(fileSize) + '<br>' +
+                                'Путь: ' + filePath + '<br><br>' +
+                                '<button onclick="shell.Run(\'notepad.exe \"' + filePath + '\"\', 1, false)">Открыть в блокноте</button>');
+                        } else {
+                            // Для HTML файлов используем iframe
+                            if (filePath.toLowerCase().indexOf('.htm') !== -1) {
+                                clearAllContainers();
+                                htmlContent.src = url;
+                                htmlContent.className = '';
+                                setStatus('success', 'Загружен файл: ' + filePath + ' (' + formatFileSize(fileSize) + ')');
+                            } else {
+                                // Для текстовых файлов показываем как текст
+                                var textFile = fso.OpenTextFile(filePath, 1);
+                                var fileContent = textFile.ReadAll();
+                                textFile.Close();
+                                clearAllContainers();
+                                content.innerHTML = '<pre style="font-size: 29px; padding: 20px; word-wrap: break-word; white-space: pre-wrap;">' + 
+                                                    escapeHtml(fileContent) + '</pre>';
+                                content.style.display = 'block';
+                                setStatus('success', 'Загружен файл: ' + filePath + ' (' + formatFileSize(fileSize) + ')');
+                            }
+                        }
+                    } else {
+                        setStatus('error', 'Файл не найден: ' + filePath);
+                    }
+                } else {
+                    setStatus('error', 'Неподдерживаемый формат file URL');
+                }
+            } catch (error) {
+                setStatus('error', 'Ошибка чтения файла: ' + error.message);
+            }
+            
+            isNavigating = false;
+        }
+        
+        // Поиск в Google
+        function searchGoogle(query) {
+            setProtocolInfo('Протокол: Google Search');
+            var searchUrl = 'https://www.google.com/search?q=' + encodeURIComponent(query);
+            
+            setStatus('success', 'Поиск: ' + query);
+            
+            clearAllContainers();
+            webFrame.src = searchUrl;
+            webFrame.className = '';
+            
+            setTimeout(function() {
+                if (currentRequest === searchUrl) {
+                    isNavigating = false;
+                }
+            }, 2000);
+        }
+        
+        // Вспомогательные функции
+        function clearContent() {
+            content.style.display = 'block';
+            content.innerHTML = '<center style="margin-top: 50px;"><h2>Загрузка...</h2></center>';
+            protocolInfo.innerHTML = '';
+        }
+        
+        function clearAllContainers() {
+            content.style.display = 'none';
+            content.innerHTML = '';
+            webFrame.className = 'hidden';
+            webFrame.src = 'about:blank';
+            htmlContent.className = 'hidden';
+            htmlContent.src = 'about:blank';
+            protocolInfo.innerHTML = '';
+        }
+        
+        function setStatus(type, message) {
+            status.innerHTML = message;
+            status.className = 'status ' + type;
+        }
+        
+        function setProtocolInfo(info) {
+            protocolInfo.innerHTML = info;
+        }
+        
+        function escapeHtml(text) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showSafeContent(title, message) {
+            content.innerHTML = '<center style="margin-top: 50px; color: red;">' +
+                '<h2>' + title + '</h2>' +
+                '<p>' + message + '</p>' +
+                '</center>';
+            content.style.display = 'block';
+            webFrame.className = 'hidden';
+            htmlContent.className = 'hidden';
+        }
+    </script>
+</body>
+</html>

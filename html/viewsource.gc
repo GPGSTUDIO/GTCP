@@ -1,0 +1,3 @@
+if <VAR>filename /= <VAR>__nothing__ open <VAR>filename read output
+if <VAR>filename /= <VAR>__nothing__ print <VAR>output
+if <VAR>filename == <VAR>__nothing__ print Doesnt have args! add argument with name "filename" and try again.
